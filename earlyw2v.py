@@ -4,9 +4,7 @@ import sys
 import operator
 import os
 
-import pandas as pd
 import numpy as np
-import pickle
 from gensim.models import Word2Vec
 from gensim.models import FastText
 from gensim.models.word2vec import LineSentence
@@ -16,15 +14,11 @@ from keras.datasets import imdb
 from keras.models import Sequential
 from keras.layers import Dense, Activation
 from keras.layers import LSTM
-from keras.layers.convolutional import Conv1D
-from keras.layers.convolutional import MaxPooling1D
 from keras.layers import Dropout
 from keras.layers.embeddings import Embedding
 from keras.preprocessing import sequence
-from keras.layers import CuDNNLSTM,SpatialDropout1D, Bidirectional
 from keras.models import Model
 from keras.optimizers import Adam
-from keras.layers.normalization import BatchNormalization
 import tensorflow as tf
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 from sklearn.metrics import classification_report
@@ -37,6 +31,7 @@ import re
 import functools
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 
+#######################################################Esta funcion permite ver el estado de recall y precision en el entrenamiento de la LSTM
 def as_keras_metric(method):    
     @functools.wraps(method)
     def wrapper(self, args, **kwargs):
@@ -48,10 +43,13 @@ def as_keras_metric(method):
         return value
     return wrapper
 
+precision = as_keras_metric(tf.metrics.precision)
+recall = as_keras_metric(tf.metrics.recall)
 
+######################################################Esta es la funcion del articulo
 def partially_linear(true_dist, coding_dist):
         loss = 0
-        TIME = 1#Es probable que este cambie
+        TIME = 1#Esta variable maneja el tiempo(numero de frames o en este caso secuencias leidas)
         N_C = 21
         batch = 32
 	print tf.shape(true_dist)
@@ -64,7 +62,7 @@ def partially_linear(true_dist, coding_dist):
 
         return -loss/batch
 
-#Primero se necesita obtener todo el train, tanto positivo como negativo
+#####################################Primero se necesita obtener todo el train, tanto positivo como negativo
 textos=[""]*486
 labels=[0]*486
 pos=0
@@ -92,7 +90,8 @@ for i in range(10):
 			#print path,line[1]
 			cont+=1
 		#print cont
-###Una vez que se tiene cargado los textos, se procede a determinar el texto mas largo
+
+####################################Una vez que se tiene cargado los textos, se procede a determinar el texto mas largo o a determinarlo como numero fijo
 maxl=3000
 minl=1000000
 """for t in textos:
@@ -105,6 +104,8 @@ minl=1000000
 #print minl
 #print maxl/486
 """	
+
+################################# Se procede a crear el modelo de W2V y las funciones para obtener los indices o palabras resultantes
 labels=np.array(labels)	
 corpus=[nltk.word_tokenize(sent.decode('utf-8')) for sent in textos]
 model = Word2Vec(min_count=2, window=5, size=100, sample=1e-4, negative=5, workers=7, sg=1)
@@ -122,7 +123,7 @@ def idx2word(idx):
 
 
 print "Tamaños de los embedding:",preweigth.shape
-#Ahora se necesita crear y cargar los datos del train
+##############################################################Ahora se necesita crear y cargar los datos del train en la matriz de entrenamiento con indices de secuencias de palabras
 mentrena=np.zeros([len(textos),maxl],dtype=np.int32)
 
 i=0
@@ -144,23 +145,20 @@ print "Positivos:",pos
 print "Negativos:",neg
 print "Shape mentrena:",mentrena.shape
 print "Shape labels:",labels.shape
-#mentrena=np.expand_dims(mentrena,axis=0)
-#Ahora se procede a crear la red lstm
 
-precision = as_keras_metric(tf.metrics.precision)
-recall = as_keras_metric(tf.metrics.recall)
 
+
+##############################################Ahora se procede a crear la red lstm
 lstm=Sequential()
 lstm.add(Embedding(input_dim=vocabulario,output_dim=embedding,weights=[preweigth],trainable=False,input_length=maxl,mask_zero=True))
 lstm.add(LSTM(units=100, dropout=0.2, recurrent_dropout=0.2, input_shape=(maxl,),return_sequences=False))#El numero de secuencias regresadas es igual al numero de unidades que se tengan
 lstm.add(Dense(1,activation='sigmoid'))
-#lstm.add(Dense(1,activation='sigmoid'))
-lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy'])
+#lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy',precision,recall])#Esta linea es para cuando se usa la funcion de perdida del articulo
+lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy',precision,recall])
 print (lstm.summary())
 lstm.fit(mentrena,labels,epochs=30)
 
-#Una vez que se tiene el modelo creado se procede a crear los datos de test de forma secuencial-incremental segun los chunks y las predicciones
-
+################Una vez que se tiene el modelo creado se procede a crear los datos de test de forma secuencial-incremental segun los chunks y las predicciones
 #Primero se cargan los textos 
 chunk1=[""]*401
 chunk2=[""]*401
@@ -290,7 +288,7 @@ for m in range(10):
 		if pclases[p]==1 and pproba[p]>0.5:
 			finalpost[p]=posttotal[p]
 
-#Ahora se calcula el erde
+############Ahora se calcula el erde
 erde5=np.zeros((len(clas),),dtype=float)
 erde50=np.zeros((len(clas),),dtype=float)
 for i in range(len(clas)):	
@@ -307,15 +305,10 @@ for i in range(len(clas)):
 		erde5[i] = 0.0
 		erde50[i] = 0.0
 
+
 print "Erde 5:",erde5.mean()*100
 print "Erde 50:",erde50.mean()*100
-#precision = float(cont)/cont2
-#recall = float(cont)/cont3
-#F1 = 2 * (precision * recall) / (precision + recall)
 
-#print "Precision:",precision
-#print "Recall:",recall
-#print "F1:",F1
 for i in range(len(pclases)):
 	print pclases[i],clas[i]
 
