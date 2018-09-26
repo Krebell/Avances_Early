@@ -14,7 +14,7 @@ from keras.datasets import imdb
 from keras.models import Sequential
 from keras.layers import Dense, Activation
 from keras.layers import LSTM
-from keras.layers import Dropout
+from keras.layers import Dropout,Input,Reshape,Flatten
 from keras.layers.embeddings import Embedding
 from keras.preprocessing import sequence
 from keras.models import Model
@@ -49,22 +49,39 @@ recall = as_keras_metric(tf.metrics.recall)
 ######################################################Esta es la funcion del articulo
 def partially_linear(true_dist, coding_dist):
         loss = 0
-        TIME = 1#Esta variable maneja el tiempo(numero de frames o en este caso secuencias leidas)
-        N_C = 21
-        batch = 32
-	print tf.shape(true_dist)
-	print tf.shape(coding_dist)
+        TIME = 5
+        N_C = 2
+        batch = 32	
         for t in range (TIME):
 		print t
-                term1 = true_dist[:,t] * tf.log(coding_dist[:,t]+0.0000001)
-                term2 = (1-true_dist[:,t]) * tf.log(1-coding_dist[:,t]+0.0000001)
-                loss = loss + np.double(1)/N_C * tf.add(term1,term2*np.double(t)/TIME)
+                term1 = true_dist[t] * tensor.log(coding_dist[t]+0.0000001)
+                term2 = (1-true_dist[t]) * tensor.log(1-coding_dist[t]+0.0000001)
+                loss = loss + np.double(1)/N_C * tensor.sum(term1+term2*np.double(t)/TIME, axis=0)
 
         return -loss/batch
+"""
+def partially_linear(true_dist, coding_dist):
+        loss = 0
+        TIME = 20
+        N_C = 21
+        batch = 8
+	print tf.size(true_dist)
+	print tf.size(coding_dist)
+        for t in range (TIME):
+		print t
+                term1 = true_dist[t] * tf.log(coding_dist[t]+0.0000001)
+                term2 = (1-true_dist[t]) * tf.log(1-coding_dist[t]+0.0000001)
+                loss = loss + np.double(1)/N_C * tf.add(term1,term2*np.double(t)/TIME)#2=Time
 
+        return -loss/batch
+"""
 #####################################Primero se necesita obtener todo el train, tanto positivo como negativo
+nega=np.zeros((403,),dtype=int)
+posi=np.ones((83,),dtype=int)
+clases=np.concatenate((posi,nega),axis=0)
+
 textos=[""]*486
-labels=[0]*486
+#labels=[0]*486
 pos=0
 neg=0
 for i in range(10):
@@ -77,12 +94,12 @@ for i in range(10):
 			path="./train-completo/neg"+str(i+1)+".txt"
 		arch=open(path)
 		for linea in arch.readlines():
-			if(j+1)==1:
+			"""if(j+1)==1:
 				labels[cont]=1
 				pos+=1
 			else:
 				labels[cont]=0
-				neg+=1
+				neg+=1"""
 			line=linea.strip('\n').lower().split('\t');						
 			#linea=' '.join([word for word in linea.split() if word not in (stopwords.words('english'))])
 			#linea=re.sub(r'[^\w]', ' ', linea)
@@ -92,7 +109,7 @@ for i in range(10):
 		#print cont
 
 ####################################Una vez que se tiene cargado los textos, se procede a determinar el texto mas largo o a determinarlo como numero fijo
-maxl=3000
+maxl=1500
 minl=1000000
 """for t in textos:
 	tama=len(t.strip().split())
@@ -106,7 +123,7 @@ minl=1000000
 """	
 
 ################################# Se procede a crear el modelo de W2V y las funciones para obtener los indices o palabras resultantes
-labels=np.array(labels)	
+#labels=np.array(labels)	
 corpus=[nltk.word_tokenize(sent.decode('utf-8')) for sent in textos]
 model = Word2Vec(min_count=2, window=5, size=100, sample=1e-4, negative=5, workers=7, sg=1)
 model.build_vocab(corpus)
@@ -144,20 +161,30 @@ for doc in textos:
 print "Positivos:",pos
 print "Negativos:",neg
 print "Shape mentrena:",mentrena.shape
-print "Shape labels:",labels.shape
+print "Shape labels:",clases.shape
 
 
 
 ##############################################Ahora se procede a crear la red lstm
+"""lstm=Sequential()
+lstm.add(Embedding(input_dim=vocabulario,output_dim=embedding,weights=[preweigth],trainable=False,input_length=maxl,mask_zero=True))
+lstm.add(LSTM(units=100, dropout=0.2, recurrent_dropout=0.2, input_shape=(maxl,)))
+lstm.add(Dense(1,activation='sigmoid'))
+lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy'])#Esta linea es para cuando se usa la funcion de perdida del articulo
+#lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy',precision,recall])
+print (lstm.summary())
+lstm.fit(mentrena,labels,epochs=2)
+"""
 lstm=Sequential()
 lstm.add(Embedding(input_dim=vocabulario,output_dim=embedding,weights=[preweigth],trainable=False,input_length=maxl,mask_zero=True))
-lstm.add(LSTM(units=100, dropout=0.2, recurrent_dropout=0.2, input_shape=(maxl,),return_sequences=False))#El numero de secuencias regresadas es igual al numero de unidades que se tengan
+lstm.add(LSTM(units=100, dropout=0.2, recurrent_dropout=0.2, input_shape=(maxl,)))
+#lstm.add(Dense(400,activation='relu'))
+#lstm.add(Flatten())
 lstm.add(Dense(1,activation='sigmoid'))
-#lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy',precision,recall])#Esta linea es para cuando se usa la funcion de perdida del articulo
-lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy',precision,recall])
+#lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy',precision,recall])
+lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy'])
 print (lstm.summary())
-lstm.fit(mentrena,labels,epochs=30)
-
+lstm.fit(mentrena,clases,epochs=1)
 ################Una vez que se tiene el modelo creado se procede a crear los datos de test de forma secuencial-incremental segun los chunks y las predicciones
 #Primero se cargan los textos 
 chunk1=[""]*401
@@ -231,6 +258,8 @@ for i in range(10):
 			cont+=1
 
 #La matriz de evaluacion es incremental conforme a los chunks leidos, por tanto se crea 10 veces en un ciclo for
+finalpost=np.zeros((401,),dtype=int)#aqui se guardara el numero de chunks usados para la prediccion	
+prediccion=np.zeros((401,),dtype=int)
 for m in range(10):
 	test=np.zeros([len(chunk1),maxl],dtype=np.int32)
 	posttotal=np.zeros((401,),dtype=int)#aqui se guarda el total de post usados para despues calcular ERDE
@@ -280,28 +309,28 @@ for m in range(10):
 		i+=1
 	print "Shape test:",test.shape
 	#Una vez que se tiene la matriz de test dependiendo del chunk que se este leyendo, se procede a hacer las predicciones
-	#Recordar que se necesita guardar el punto en el que la prediccion fue hecha para los que son verdaderos con cierto % de confianza
-	finalpost=np.zeros((401,),dtype=int)#aqui se guardara el numero de chunks usados para la prediccion	
+	#Recordar que se necesita guardar el punto en el que la prediccion fue hecha para los que son verdaderos con cierto % de confianza	
 	pproba=lstm.predict(test)		
 	pclases=lstm.predict_classes(test)	
 	for p in range(len(pclases)):
-		if pclases[p]==1 and pproba[p]>0.5:
+		if pclases[p]==1 and pproba[p]>0.5 and finalpost[p]==0:
 			finalpost[p]=posttotal[p]
+			prediccion[p]=1
 
 ############Ahora se calcula el erde
 erde5=np.zeros((len(clas),),dtype=float)
 erde50=np.zeros((len(clas),),dtype=float)
 for i in range(len(clas)):	
-	if(pclases[i] == 1 and clas[i] == 0):
+	if(prediccion[i] == 1 and clas[i] == 0):
 		erde5[i] = float(len(posi))/len(clas)
 		erde50[i] = float(len(posi))/len(clas)
-	elif(pclases[i] == 0 and clas[i] == 1):
+	elif(prediccion[i] == 0 and clas[i] == 1):
 		erde5[i] = 1.0
 		erde50[i] = 1.0
-	elif(pclases[i] == 1 and clas[i] == 1):
+	elif(prediccion[i] == 1 and clas[i] == 1):
 		erde5[i] = 1.0 - (1.0/(1.0+np.exp(finalpost[i]-5)))##
 		erde50[i] = 1.0 - (1.0/(1.0+np.exp(finalpost[i]-50)))##
-	elif(pclases[i] == 0 and clas[i] == 0):
+	elif(prediccion[i] == 0 and clas[i] == 0):
 		erde5[i] = 0.0
 		erde50[i] = 0.0
 
@@ -309,8 +338,8 @@ for i in range(len(clas)):
 print "Erde 5:",erde5.mean()*100
 print "Erde 50:",erde50.mean()*100
 
-for i in range(len(pclases)):
-	print pclases[i],clas[i]
+#for i in range(len(pclases)):
+#	print pclases[i],clas[i]
 
 print accuracy_score(clas,pclases),precision_score(clas,pclases),recall_score(clas,pclases),f1_score(clas,pclases,average='macro'),f1_score(clas,pclases,average='micro')
 
