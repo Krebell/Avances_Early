@@ -152,10 +152,10 @@ maxl=1500
 #model = Word2Vec(min_count=2, window=5, size=100, sample=1e-4, negative=5, workers=7, sg=1)
 #model.build_vocab(corpus)
 #model.train(corpus,total_examples=model.corpus_count,epochs=20)
-model=Word2Vec.load('./skip-w2v-dpr.model')
+model=FastText.load('./skip-ft-dpr.model')
 preweigth=model.wv.syn0
 vocabulario,embedding=preweigth.shape
-#model.save('./w2v-dpr.model')
+#model.save('./ft-dpr.model')
 
 def word2index(word):
 	return model.wv.vocab[word].index
@@ -194,36 +194,34 @@ idx=np.random.permutation(len(mentrena))
 mentrena=mentrena[idx]
 clases=clases[idx]
 ##############################################Ahora se procede a crear la red lstm
-
 lstm=Sequential()
 lstm.add(Embedding(input_dim=vocabulario,output_dim=embedding,weights=[preweigth],trainable=False,input_length=maxl,mask_zero=True))
 lstm.add(LSTM(units=100, dropout=0.2, recurrent_dropout=0.2, input_shape=(maxl,),return_sequences=True))
 lstm.add(LSTM(units=100,dropout=0.2))
 lstm.add(Dense(1,activation='sigmoid'))
-lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy',f1P])
-#lstm.compile(loss=partially_linear,optimizer='adam',metrics=[f1P])
+#lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy'])
+lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy',f1])
 print (lstm.summary())
 lstm.fit(mentrena,clases,epochs=500)
 ####################Se salva el modelo
-
 model_json = lstm.to_json()
-with open("./Modelos/W2V/lstm-500.json", "w") as json_file:
+with open("./Modelos/FT/lstm-500.json", "w") as json_file:
     json_file.write(model_json)
-#serialize weights to HDF5
-lstm.save_weights("./Modelos/W2V/lstm-500.h5")
+# serialize weights to HDF5
+lstm.save_weights("./Modelos/FT/lstm-500.h5")
 print("Saved model to disk")
-"""
+
 ############Se carga el modelo
-json_file = open('./Modelos/W2V/NF/100/lstm-100.json', 'r')
+"""
+json_file = open('./Modelos/W2V/NF/200/lstm-30.json', 'r')
 loaded_model_json = json_file.read()
 json_file.close()
 lstm = model_from_json(loaded_model_json)
 # load weights into new model
-lstm.load_weights("./Modelos/W2V/NF/100/lstm-100.h5")
+lstm.load_weights("./Modelos/W2V/NF/200/lstm-30.h5")
 print("Modelo cargado")
 #lstm.compile(loss="binary_crossentropy",optimizer='adam',metrics=['accuracy',f1])
-lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy',f1])
-"""
+lstm.compile(loss=partially_linear,optimizer='adam',metrics=['accuracy',f1])"""
 ################Una vez que se tiene el modelo creado se procede a crear los datos de test de forma secuencial-incremental segun los chunks y las predicciones
 #Primero se cargan los textos 
 chunk1=[""]*401
@@ -405,4 +403,3 @@ print"Reporte de Clasificacion"
 target_names=['class 0','class 1']
 print classification_report(clas,prediccion,target_names=target_names)
 print accuracy_score(clas,prediccion),precision_score(clas,prediccion),recall_score(clas,prediccion),f1_score(clas,prediccion,average='macro'),f1_score(clas,prediccion,average='micro')
-
